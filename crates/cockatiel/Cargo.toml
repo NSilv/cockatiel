@@ -1,0 +1,9 @@
+[package]
+name = "cockatiel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+macros = { path = "../macros" }
+bevy = "0.15"
+if_chain = "1.0.2"
