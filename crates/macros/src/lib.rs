@@ -303,14 +303,14 @@ fn transitions_impl(item: TokenStream) -> TokenStream {
           Condition::IsTrue(ident) => {
             let camel_ident = camelize(ident);
             quote!(
-                Condition::IsTrue(Vars::#camel_ident)
+                ::cockatiel::prelude::Condition::IsTrue(Vars::#camel_ident)
             )
           }
           Condition::IsFalse((_, ident)) => {
             let camel_ident = camelize(ident);
 
             quote!(
-                Condition::IsFalse(Vars::#camel_ident)
+              ::cockatiel::prelude::Condition::IsFalse(Vars::#camel_ident)
             )
           }
         };
@@ -325,7 +325,7 @@ fn transitions_impl(item: TokenStream) -> TokenStream {
       }
     };
     quote! {
-        Transition::new(State::#from, State::#to, #wait, #condition, #shift)
+      ::cockatiel::prelude::Transition::new(State::#from, State::#to, #wait, #condition, #shift)
     }
   });
   let transition = quote! {
