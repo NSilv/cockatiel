@@ -56,7 +56,7 @@ pub trait AnimationState: Eq + Hash + Clone + std::fmt::Debug + Send + Sync {
   fn any_state() -> Self;
 }
 
-pub trait AnimationEvent: bevy::prelude::Event + Clone + std::fmt::Debug + Send + Sync {}
+pub trait AnimationEventPayload: Clone + std::fmt::Debug + Send + Sync {}
 #[derive(Clone, Debug)]
 pub struct Transition<State: AnimationState, Inputs: AnimationInput, Shift: AnimationShift> {
   from: State,

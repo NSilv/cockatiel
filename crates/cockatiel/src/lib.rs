@@ -3,7 +3,7 @@ pub mod state_machine;
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use if_chain::if_chain;
 use state_machine::{
-  AnimationEvent, AnimationInput, AnimationShift, AnimationState, Machine, Transition,
+  AnimationEventPayload, AnimationInput, AnimationShift, AnimationState, Machine, Transition,
 };
 use std::time::Duration;
 #[derive(Default)]
@@ -17,17 +17,17 @@ impl<Tag: AnimatorTag> Plugin for AnimatorPlugin<Tag> {
         Update,
         (execute_animations::<Tag>, sync_animations::<Tag>).chain(),
       )
-      .add_event::<Tag::Event>();
+      .add_event::<AnimationEvent<Tag::Event>>();
   }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Reflect)]
-struct Frame<E: AnimationEvent> {
+struct Frame<E: AnimationEventPayload> {
   index: usize,
   duration: Duration,
   event: Option<E>,
 }
-impl<E: AnimationEvent> Frame<E> {
+impl<E: AnimationEventPayload> Frame<E> {
   pub fn new(index: usize, duration: Duration) -> Self {
     Self {
       index,
@@ -37,11 +37,11 @@ impl<E: AnimationEvent> Frame<E> {
   }
 }
 #[derive(Clone, PartialEq, Eq, Debug, Reflect)]
-pub struct FrameData<E: AnimationEvent> {
+pub struct FrameData<E: AnimationEventPayload> {
   frames: Vec<Frame<E>>,
   loops: bool,
 }
-impl<E: AnimationEvent> FrameData<E> {
+impl<E: AnimationEventPayload> FrameData<E> {
   #[allow(dead_code)]
   pub fn new(frames: Vec<(usize, f32)>, loops: bool) -> Self {
     let frames: Vec<Frame<_>> = frames
@@ -66,7 +66,7 @@ impl<E: AnimationEvent> FrameData<E> {
 }
 
 #[derive(Component, Debug, Reflect, Clone)]
-pub enum Animation<E: AnimationEvent> {
+pub enum Animation<E: AnimationEventPayload> {
   NonDirectional(FrameData<E>),
   BiDirectional {
     up: FrameData<E>,
@@ -74,7 +74,7 @@ pub enum Animation<E: AnimationEvent> {
   },
 }
 
-impl<E: AnimationEvent> Animation<E> {
+impl<E: AnimationEventPayload> Animation<E> {
   #[allow(dead_code)]
   pub fn non_directional(animation: FrameData<E>) -> Self {
     Self::NonDirectional(animation)
@@ -131,11 +131,17 @@ pub struct Animator<Tag: AnimatorTag> {
 pub trait AnimatorTag: 'static + Send + Sync {
   type Input: AnimationInput;
   type State: AnimationState;
-  type Event: AnimationEvent;
+  type Event: AnimationEventPayload;
   type Shift: AnimationShift;
 
   fn transitions() -> Vec<Transition<Self::State, Self::Input, Self::Shift>>;
   fn animations() -> HashMap<Self::State, Animation<Self::Event>>;
+}
+
+#[derive(Event)]
+pub struct AnimationEvent<E: AnimationEventPayload> {
+  pub entity: Entity,
+  pub event: E,
 }
 
 // in the same crate as trait, you can implement trait for anything you want
@@ -234,10 +240,15 @@ impl<Tag: AnimatorTag> Animator<Tag> {
 
 pub fn execute_animations<Tag: AnimatorTag>(
   time: Res<Time>,
-  mut query: Query<(&mut Animator<Tag>, &mut Sprite, Option<&LookDirection>)>,
-  mut event_writer: EventWriter<Tag::Event>,
+  mut query: Query<(
+    Entity,
+    &mut Animator<Tag>,
+    &mut Sprite,
+    Option<&LookDirection>,
+  )>,
+  mut event_writer: EventWriter<AnimationEvent<Tag::Event>>,
 ) {
-  for (mut animator, mut sprite, direction) in &mut query {
+  for (entity, mut animator, mut sprite, direction) in &mut query {
     if let Some(atlas) = &mut sprite.texture_atlas {
       let inputs = animator.inputs.clone();
       let old_state = animator.state_machine.current_state().clone();
@@ -273,7 +284,11 @@ pub fn execute_animations<Tag: AnimatorTag>(
           }
 
           if let Some(ref event) = frame.event {
-            event_writer.send(event.clone());
+            let animator_event = AnimationEvent {
+              entity,
+              event: event.clone(),
+            };
+            event_writer.send(animator_event);
           }
 
           animator.start_timer(&frame_data);
