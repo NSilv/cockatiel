@@ -166,6 +166,13 @@ impl<Tag: AnimatorTag> Default for AnimationGroup<Tag> {
     }
   }
 }
+macro_rules! log {
+  ($tag:ident, $msg:expr) => {
+    if $tag::log() {
+      info!($msg)
+    }
+  };
+}
 impl<Tag: AnimatorTag> AnimationGroup<Tag> {
   pub fn when<F>(mut self, condition: F, animation: Animation<Tag::Event>) -> Self
   where
@@ -196,24 +203,30 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
     self
   }
   fn choose(&self, inputs: &Tag::Input) -> Option<&Animation<Tag::Event>> {
-    info!("choosing with inputs: {inputs:?}")
+    // log!(Tag, "choosing with inputs: {inputs:?}");
+
     for ConditionalAnimation {
       name,
       animation,
       predicate: condition,
     } in self.conditional_animations.iter()
     {
-      info!("trying condition '{name}'");
+      // log!(Tag, "trying condition '{name}'");
+
       if condition(inputs) {
-        info!("AnimationGroup::choose - Chosen animation named '{name}'!");
+        log!(
+          Tag,
+          "AnimationGroup::choose - Chosen animation named '{name}'!"
+        );
+
         return Some(animation);
       }
     }
     if let Some(ref base_animation) = self.base_animation {
-      info!("AnimationGroup::choose - chosen base animation");
+      // log!(Tag, "AnimationGroup::choose - chosen base animation");
       return Some(base_animation);
     }
-    info!("AnimationGroup::choose - no animation chosen");
+    // log!(Tag, "AnimationGroup::choose - no animation chosen");
     None
   }
 }
@@ -251,6 +264,10 @@ pub trait AnimatorTag: 'static + Send + Sync {
     Self: Sized,
   {
     AnimationGroup::default()
+  }
+
+  fn log() -> bool {
+    false
   }
 }
 
@@ -381,13 +398,11 @@ pub fn execute_animations<Tag: AnimatorTag>(
       let step_result = animator.state_machine.step(&inputs, is_last_frame, shift);
       let frame_data = animator.get_frames(direction).clone();
       if let Some(frame_data) = frame_data {
+        let current_state = animator.state_machine.current_state();
         if step_result.changed {
-          info!(
-            "Animation state changed from {:?} to {:?} with inputs: {:?} (step_result: {:?})",
-            old_state,
-            animator.state_machine.current_state(),
-            inputs,
-            step_result
+          log!(
+            Tag,
+            "Animation state changed from {old_state:?} to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})"
           );
           animator.reset(atlas, &frame_data);
         }
