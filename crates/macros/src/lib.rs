@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, DeriveInput, Ident, Token};
 
-#[proc_macro_derive(AnimationEvent)]
+#[proc_macro_derive(AnimationEventPayload)]
 pub fn animation_event_derive(event: TokenStream) -> TokenStream {
   animation_event_derive_impl(event)
 }
@@ -12,7 +12,7 @@ pub fn animation_event_derive(event: TokenStream) -> TokenStream {
 fn animation_event_derive_impl(event: TokenStream) -> TokenStream {
   let DeriveInput { ident, .. } = parse_macro_input!(event as DeriveInput);
   quote! {
-      impl AnimationEvent for #ident {}
+      impl AnimationEventPayload for #ident {}
   }
   .into()
 }
