@@ -1,5 +1,5 @@
+pub mod prelude;
 pub mod state_machine;
-
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use if_chain::if_chain;
 use state_machine::{
@@ -363,4 +363,3 @@ impl From<Vec3> for LookDirection {
     Self::from(value.truncate())
   }
 }
-pub use macros::*;
