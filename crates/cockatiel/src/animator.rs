@@ -203,13 +203,15 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
     } in self.conditional_animations.iter()
     {
       if condition(inputs) {
-        info!("Chosen animation named '{name}'!");
+        info!("AnimationGroup::choose - Chosen animation named '{name}'!");
         return Some(animation);
       }
     }
     if let Some(ref base_animation) = self.base_animation {
+      info!("AnimationGroup::choose - chosen base animation");
       return Some(base_animation);
     }
+    info!("AnimationGroup::choose - no animation chosen");
     None
   }
 }
