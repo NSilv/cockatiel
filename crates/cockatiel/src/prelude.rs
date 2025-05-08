@@ -1,2 +1,2 @@
-pub use crate::{state_machine::*, *};
+pub use crate::{animator::*, state_machine::*};
 pub use macros::*;
