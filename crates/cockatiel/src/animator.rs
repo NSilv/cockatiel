@@ -196,12 +196,14 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
     self
   }
   fn choose(&self, inputs: &Tag::Input) -> Option<&Animation<Tag::Event>> {
+    info!("choosing with inputs: {inputs:?}")
     for ConditionalAnimation {
       name,
       animation,
       predicate: condition,
     } in self.conditional_animations.iter()
     {
+      info!("trying condition '{name}'");
       if condition(inputs) {
         info!("AnimationGroup::choose - Chosen animation named '{name}'!");
         return Some(animation);
