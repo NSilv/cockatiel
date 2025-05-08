@@ -192,9 +192,6 @@ impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
   }
 }
 
-pub fn group<Tag: AnimatorTag>(_tag: Tag) -> AnimationGroup<Tag> {
-  AnimationGroup::default()
-}
 #[derive(Component, Debug, Reflect)]
 pub struct Animator<Tag: AnimatorTag> {
   timer: Timer,
@@ -214,6 +211,13 @@ pub trait AnimatorTag: 'static + Send + Sync {
   fn animations() -> HashMap<Self::State, impl Into<AnimationGroup<Self>>>
   where
     Self: Sized;
+
+  fn group() -> AnimationGroup<Self>
+  where
+    Self: Sized,
+  {
+    AnimationGroup::default()
+  }
 }
 
 #[derive(Event)]
