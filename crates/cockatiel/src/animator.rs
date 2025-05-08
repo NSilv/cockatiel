@@ -115,13 +115,93 @@ impl<E: AnimationEventPayload> Animation<E> {
   }
 }
 
+#[derive(Reflect)]
+pub struct ConditionalAnimation<Tag: AnimatorTag> {
+  animation: Animation<Tag::Event>,
+  #[allow(clippy::type_complexity)]
+  predicate: Box<dyn Fn(&Tag::Input) -> bool + Send + Sync>,
+}
+impl<Tag: AnimatorTag> ConditionalAnimation<Tag> {
+  pub fn new<F>(condition: F, animation: Animation<Tag::Event>) -> Self
+  where
+    F: Fn(&Tag::Input) -> bool + Send + Sync + 'static,
+  {
+    Self {
+      animation,
+      predicate: Box::new(condition),
+    }
+  }
+}
+impl<Tag: AnimatorTag> std::fmt::Debug for ConditionalAnimation<Tag> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ConditionalAnimation")
+      .field("animation", &self.animation)
+      .field("condition", &"<function>")
+      .finish()
+  }
+}
+#[derive(Debug, Reflect)]
+pub struct AnimationGroup<Tag: AnimatorTag> {
+  conditional_animations: Vec<ConditionalAnimation<Tag>>,
+  base_animation: Option<Animation<Tag::Event>>,
+}
+impl<Tag: AnimatorTag> Default for AnimationGroup<Tag> {
+  fn default() -> Self {
+    Self {
+      conditional_animations: vec![],
+      base_animation: None,
+    }
+  }
+}
+impl<Tag: AnimatorTag> AnimationGroup<Tag> {
+  pub fn when<F>(mut self, condition: F, animation: Animation<Tag::Event>) -> Self
+  where
+    F: Fn(&Tag::Input) -> bool + 'static + Send + Sync,
+  {
+    self
+      .conditional_animations
+      .push(ConditionalAnimation::new(condition, animation));
+    self
+  }
+  pub fn otherwise(mut self, animation: Animation<Tag::Event>) -> Self {
+    self.base_animation = Some(animation);
+    self
+  }
+  fn choose(&self, inputs: &Tag::Input) -> Option<&Animation<Tag::Event>> {
+    for ConditionalAnimation {
+      animation,
+      predicate: condition,
+    } in self.conditional_animations.iter()
+    {
+      if condition(inputs) {
+        return Some(animation);
+      }
+    }
+    if let Some(ref base_animation) = self.base_animation {
+      return Some(base_animation);
+    }
+    None
+  }
+}
+impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
+  fn from(value: Animation<Tag::Event>) -> Self {
+    Self {
+      conditional_animations: vec![],
+      base_animation: Some(value),
+    }
+  }
+}
+
+pub fn group<Tag: AnimatorTag>(_tag: Tag) -> AnimationGroup<Tag> {
+  AnimationGroup::default()
+}
 #[derive(Component, Debug, Reflect)]
 pub struct Animator<Tag: AnimatorTag> {
   timer: Timer,
   frame_index: usize,
   pub inputs: Tag::Input,
   next_shift: Option<Tag::Shift>,
-  animations: HashMap<Tag::State, Animation<Tag::Event>>,
+  animations: HashMap<Tag::State, AnimationGroup<Tag>>,
   state_machine: Machine<Tag::Input, Tag::State, Tag::Shift>,
 }
 pub trait AnimatorTag: 'static + Send + Sync {
@@ -131,7 +211,9 @@ pub trait AnimatorTag: 'static + Send + Sync {
   type Shift: AnimationShift;
 
   fn transitions() -> Vec<Transition<Self::State, Self::Input, Self::Shift>>;
-  fn animations() -> HashMap<Self::State, Animation<Self::Event>>;
+  fn animations() -> HashMap<Self::State, impl Into<AnimationGroup<Self>>>
+  where
+    Self: Sized;
 }
 
 #[derive(Event)]
@@ -144,7 +226,10 @@ pub struct AnimationEvent<E: AnimationEventPayload> {
 // in the same crate as defining a struct or enum, you can implement any trait for that struct or enum
 impl<Tag: AnimatorTag> Default for Animator<Tag> {
   fn default() -> Self {
-    let animations = Tag::animations();
+    let animations = Tag::animations()
+      .into_iter()
+      .map(|(key, group)| (key, group.into()))
+      .collect::<HashMap<Tag::State, AnimationGroup<Tag>>>();
     if animations.is_empty() {
       panic!("Animator must have at least one animation");
     }
@@ -216,8 +301,8 @@ impl<Tag: AnimatorTag> Animator<Tag> {
 
   fn get_animation(&self) -> Option<&Animation<Tag::Event>> {
     //SAFE: animation_index can only be changed via `change_animation`, and that checks that it is inbounds
-    let animation = self.animations.get(self.state_machine.current_state())?;
-    Some(animation)
+    let animation_group = self.animations.get(self.state_machine.current_state())?;
+    animation_group.choose(&self.inputs)
   }
 
   fn get_frames(&self, direction: Option<&LookDirection>) -> Option<FrameData<Tag::Event>> {
