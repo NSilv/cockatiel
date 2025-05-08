@@ -117,6 +117,7 @@ impl<E: AnimationEventPayload> Animation<E> {
 
 #[derive(Reflect)]
 pub struct ConditionalAnimation<Tag: AnimatorTag> {
+  name: &'static str,
   animation: Animation<Tag::Event>,
   #[allow(clippy::type_complexity)]
   predicate: Box<dyn Fn(&Tag::Input) -> bool + Send + Sync>,
@@ -127,6 +128,17 @@ impl<Tag: AnimatorTag> ConditionalAnimation<Tag> {
     F: Fn(&Tag::Input) -> bool + Send + Sync + 'static,
   {
     Self {
+      name: "",
+      animation,
+      predicate: Box::new(condition),
+    }
+  }
+  pub fn new_named<F>(name: &'static str, condition: F, animation: Animation<Tag::Event>) -> Self
+  where
+    F: Fn(&Tag::Input) -> bool + Send + Sync + 'static,
+  {
+    Self {
+      name,
       animation,
       predicate: Box::new(condition),
     }
@@ -135,6 +147,7 @@ impl<Tag: AnimatorTag> ConditionalAnimation<Tag> {
 impl<Tag: AnimatorTag> std::fmt::Debug for ConditionalAnimation<Tag> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("ConditionalAnimation")
+      .field("name", &self.name)
       .field("animation", &self.animation)
       .field("condition", &"<function>")
       .finish()
@@ -163,17 +176,34 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
       .push(ConditionalAnimation::new(condition, animation));
     self
   }
+  pub fn when_named<F>(
+    mut self,
+    name: &'static str,
+    condition: F,
+    animation: Animation<Tag::Event>,
+  ) -> Self
+  where
+    F: Fn(&Tag::Input) -> bool + 'static + Send + Sync,
+  {
+    self
+      .conditional_animations
+      .push(ConditionalAnimation::new_named(name, condition, animation));
+    self
+  }
+
   pub fn otherwise(mut self, animation: Animation<Tag::Event>) -> Self {
     self.base_animation = Some(animation);
     self
   }
   fn choose(&self, inputs: &Tag::Input) -> Option<&Animation<Tag::Event>> {
     for ConditionalAnimation {
+      name,
       animation,
       predicate: condition,
     } in self.conditional_animations.iter()
     {
       if condition(inputs) {
+        info!("Chosen animation named '{name}'!");
         return Some(animation);
       }
     }
@@ -348,8 +378,8 @@ pub fn execute_animations<Tag: AnimatorTag>(
       let frame_data = animator.get_frames(direction).clone();
       if let Some(frame_data) = frame_data {
         if step_result.changed {
-          debug!(
-            "Animation changed from {:?} to {:?} with inputs: {:?} (step_result: {:?})",
+          info!(
+            "Animation state changed from {:?} to {:?} with inputs: {:?} (step_result: {:?})",
             old_state,
             animator.state_machine.current_state(),
             inputs,
