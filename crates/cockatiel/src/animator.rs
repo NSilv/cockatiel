@@ -120,27 +120,25 @@ pub struct ConditionalAnimation<Tag: AnimatorTag> {
   name: &'static str,
   animation: Animation<Tag::Event>,
   #[allow(clippy::type_complexity)]
-  predicate: Box<dyn Fn(&Tag::Input) -> bool + Send + Sync>,
+  predicate: fn(&Tag::Input) -> bool,
 }
 impl<Tag: AnimatorTag> ConditionalAnimation<Tag> {
-  pub fn new<F>(condition: F, animation: Animation<Tag::Event>) -> Self
-  where
-    F: Fn(&Tag::Input) -> bool + Send + Sync + 'static,
-  {
+  pub fn new(predicate: fn(&Tag::Input) -> bool, animation: Animation<Tag::Event>) -> Self {
     Self {
       name: "",
       animation,
-      predicate: Box::new(condition),
+      predicate,
     }
   }
-  pub fn new_named<F>(name: &'static str, condition: F, animation: Animation<Tag::Event>) -> Self
-  where
-    F: Fn(&Tag::Input) -> bool + Send + Sync + 'static,
-  {
+  pub fn new_named(
+    name: &'static str,
+    predicate: fn(&Tag::Input) -> bool,
+    animation: Animation<Tag::Event>,
+  ) -> Self {
     Self {
       name,
       animation,
-      predicate: Box::new(condition),
+      predicate,
     }
   }
 }
@@ -174,27 +172,26 @@ macro_rules! log {
   };
 }
 impl<Tag: AnimatorTag> AnimationGroup<Tag> {
-  pub fn when<F>(mut self, condition: F, animation: Animation<Tag::Event>) -> Self
-  where
-    F: Fn(&Tag::Input) -> bool + 'static + Send + Sync,
-  {
+  pub fn when(
+    mut self,
+    predicate: fn(&Tag::Input) -> bool,
+    animation: Animation<Tag::Event>,
+  ) -> Self {
     self
       .conditional_animations
-      .push(ConditionalAnimation::new(condition, animation));
+      .push(ConditionalAnimation::new(predicate, animation));
     self
   }
-  pub fn when_named<F>(
+  pub fn when_named(
     mut self,
     name: &'static str,
-    condition: F,
+    predicate: fn(&Tag::Input) -> bool,
     animation: Animation<Tag::Event>,
   ) -> Self
-  where
-    F: Fn(&Tag::Input) -> bool + 'static + Send + Sync,
-  {
+where {
     self
       .conditional_animations
-      .push(ConditionalAnimation::new_named(name, condition, animation));
+      .push(ConditionalAnimation::new_named(name, predicate, animation));
     self
   }
 
@@ -208,12 +205,12 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
     for ConditionalAnimation {
       name,
       animation,
-      predicate: condition,
+      predicate,
     } in self.conditional_animations.iter()
     {
       // log!(Tag, "trying condition '{name}'");
 
-      if condition(inputs) {
+      if predicate(inputs) {
         log!(
           Tag,
           "AnimationGroup::choose - Chosen animation named '{name}'!"
