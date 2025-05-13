@@ -166,8 +166,8 @@ impl<Tag: AnimatorTag> Default for AnimationGroup<Tag> {
 }
 macro_rules! log {
   ($tag:ident, $msg:expr) => {
-    if $tag::log() {
-      info!($msg)
+    if let Some(name) = $tag::log() {
+      info!("[{name}] $msg")
     }
   };
 }
@@ -211,11 +211,9 @@ where {
       // log!(Tag, "trying condition '{name}'");
 
       if predicate(inputs) {
-        log!(
-          Tag,
-          "AnimationGroup::choose - Chosen animation named '{name}'!"
-        );
-
+        if let Some(tag_name) = Tag::log() {
+          bevy::log::info!("[{tag_name}] AnimationGroup::choose - Chosen animation named '{name}'!")
+        }
         return Some(animation);
       }
     }
@@ -263,8 +261,8 @@ pub trait AnimatorTag: 'static + Send + Sync {
     AnimationGroup::default()
   }
 
-  fn log() -> bool {
-    false
+  fn log() -> Option<String> {
+    None
   }
 }
 
@@ -289,7 +287,7 @@ impl<Tag: AnimatorTag> Default for Animator<Tag> {
     Self {
       timer: Timer::new(Duration::from_secs_f32(0.0), TimerMode::Once),
       animations,
-      state_machine: Machine::new(transitions),
+      state_machine: Machine::new(transitions, Tag::log()),
       frame_index: 0,
       next_shift: None,
       inputs: Tag::Input::default(),
@@ -385,7 +383,9 @@ pub fn execute_animations<Tag: AnimatorTag>(
     if let Some(atlas) = &mut sprite.texture_atlas {
       let inputs = animator.inputs.clone();
       let old_state = animator.state_machine.current_state().clone();
-
+      // if let Some(tag_name) = Tag::log() {
+      //   bevy::log::info!("[{tag_name}] Animation state is: {old_state:?}");
+      // }
       // Required for animations which need to play fully before transitioning
       let is_last_frame = animator
         .get_frames(direction)
@@ -397,10 +397,10 @@ pub fn execute_animations<Tag: AnimatorTag>(
       if let Some(frame_data) = frame_data {
         let current_state = animator.state_machine.current_state();
         if step_result.changed {
-          log!(
-            Tag,
-            "Animation state changed from {old_state:?} to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})"
-          );
+          if let Some(tag_name) = Tag::log() {
+            bevy::log::info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})");
+            bevy::log::info!("[{tag_name}] look_direction: {direction:?}");
+          }
           animator.reset(atlas, &frame_data);
         }
 
@@ -470,7 +470,7 @@ pub fn sync_animations<Tag: AnimatorTag>(
   }
 }
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default, Reflect, Debug)]
 pub enum LookDirection {
   UpRight,
   #[default]

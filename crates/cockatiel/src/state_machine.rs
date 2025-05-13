@@ -92,6 +92,7 @@ pub struct Machine<Input: AnimationInput, State: AnimationState, Shift: Animatio
   transitions: HashMap<State, Vec<Transition<State, Input, Shift>>>,
   transitions_from_any: Vec<Transition<State, Input, Shift>>, // transitions: HashMap<u8, u8>,
   transitions_from_shift: HashMap<Shift, Transition<State, Input, Shift>>,
+  log: Option<String>,
 }
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -103,7 +104,7 @@ pub struct AnimationStepResult<State: AnimationState> {
 impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
   Machine<Inputs, State, Shift>
 {
-  pub fn new(transitions: Vec<Transition<State, Inputs, Shift>>) -> Self {
+  pub fn new(transitions: Vec<Transition<State, Inputs, Shift>>, log: Option<String>) -> Self {
     let (transitions, transitions_from_any, transitions_from_shift) = transitions.into_iter().fold(
       (HashMap::new(), vec![], HashMap::new()),
       |(mut map, mut anys, mut shifts), transition| {
@@ -116,6 +117,7 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
       transitions,
       transitions_from_any,
       transitions_from_shift,
+      log,
     }
   }
   fn split_transition(
@@ -226,6 +228,13 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
     }
 
     if let Some(t) = transition {
+      if let Some(name) = &self.log {
+        bevy::log::info!(
+          "[{name}] found transition: {t:?}. old_state = {:?}, new_state = {:?}",
+          self.current_state,
+          t.to.clone()
+        );
+      }
       self.current_state = t.to.clone();
       changed = true;
     }
