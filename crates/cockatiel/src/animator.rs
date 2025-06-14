@@ -382,7 +382,6 @@ pub fn execute_animations<Tag: AnimatorTag>(
   for (entity, mut animator, mut sprite, direction) in &mut query {
     if let Some(atlas) = &mut sprite.texture_atlas {
       let inputs = animator.inputs.clone();
-      let old_state = animator.state_machine.current_state().clone();
       // if let Some(tag_name) = Tag::log() {
       //   bevy::log::info!("[{tag_name}] Animation state is: {old_state:?}");
       // }
@@ -391,8 +390,16 @@ pub fn execute_animations<Tag: AnimatorTag>(
         .get_frames(direction)
         .map(|f| f.frames.len() - 1 == animator.frame_index)
         .unwrap_or(true);
+
+      // ticking earlier cause I need the
+      animator.timer.tick(time.delta());
+
       let shift = animator.next_shift.take();
-      let step_result = animator.state_machine.step(&inputs, is_last_frame, shift);
+      let has_animation_finished = animator.timer.just_finished();
+      let step_result =
+        animator
+          .state_machine
+          .step(&inputs, is_last_frame && has_animation_finished, shift);
       let frame_data = animator.get_frames(direction).clone();
       if let Some(frame_data) = frame_data {
         let current_state = animator.state_machine.current_state();
@@ -404,9 +411,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
           animator.reset(atlas, &frame_data);
         }
 
-        animator.timer.tick(time.delta());
-
-        if animator.timer.just_finished() {
+        if has_animation_finished {
           let frame = animator.next(&frame_data);
           atlas.index = frame.index;
 
