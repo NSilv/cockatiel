@@ -253,7 +253,7 @@ impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
     }
   }
 }
-#[derive(Debug, Reflect)]
+#[derive(Debug, Reflect, Clone, Default, PartialEq)]
 pub struct AnimationTimer {
   current: f32,
   duration: f32,
@@ -561,4 +561,7 @@ impl From<Vec3> for LookDirection {
   fn from(value: Vec3) -> Self {
     Self::from(value.truncate())
   }
+}
+macro_rules! var {
+  ($var:ident) => {};
 }
