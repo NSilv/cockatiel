@@ -76,15 +76,11 @@ fn generate_vars_struct(
     .iter()
     .map(|field| {
       let ident = field.ident.as_ref().expect("ident is none").to_string();
-      let name: Vec<&str> = ident.split("_").collect();
-      let (verb, adjective) = if name.len() == 2 {
-        (name[0].to_string(), name[1].to_string())
-      } else {
-        panic!("field name is not valid")
-      };
-      let verb = capitalize(&verb);
-      let adjective = capitalize(&adjective);
-      let var_name = format!("{}{}", verb, adjective);
+      let var_name = ident
+        .split("_")
+        .map(capitalize)
+        .collect::<Vec<_>>()
+        .join("");
       syn::Ident::new(&var_name, proc_macro2::Span::call_site())
     })
     .collect();

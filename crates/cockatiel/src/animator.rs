@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::sign::SignumInt;
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use if_chain::if_chain;
-use std::{arch::aarch64::int32x2x4_t, time::Duration};
+use std::time::Duration;
 #[derive(Default)]
 pub struct AnimatorPlugin<Tag: AnimatorTag> {
   _marker: std::marker::PhantomData<Tag>,
