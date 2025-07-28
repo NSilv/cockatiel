@@ -443,8 +443,11 @@ pub fn execute_animations<Tag: AnimatorTag>(
       // }
       // Required for animations which need to play fully before transitioning
       //TODO: dont unwrap
-      let animation_group = animator.get_animation_group().unwrap();
-      let speed = animation_group.speed(&animator.inputs);
+      let speed = if let Some(animation_group) = animator.get_animation_group() {
+        animation_group.speed(&animator.inputs)
+      } else {
+        0.0
+      };
 
       let is_last_frame = animator
         .get_frames(direction)
