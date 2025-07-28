@@ -1,7 +1,8 @@
 use crate::prelude::*;
+use crate::sign::SignumInt;
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use if_chain::if_chain;
-use std::time::Duration;
+use std::{arch::aarch64::int32x2x4_t, time::Duration};
 #[derive(Default)]
 pub struct AnimatorPlugin<Tag: AnimatorTag> {
   _marker: std::marker::PhantomData<Tag>,
@@ -151,16 +152,20 @@ impl<Tag: AnimatorTag> std::fmt::Debug for ConditionalAnimation<Tag> {
       .finish()
   }
 }
+
+type VarOf<Tag> = <<Tag as AnimatorTag>::Input as AnimationInput>::Vars;
 #[derive(Debug, Reflect)]
 pub struct AnimationGroup<Tag: AnimatorTag> {
   conditional_animations: Vec<ConditionalAnimation<Tag>>,
   base_animation: Option<Animation<Tag::Event>>,
+  speed_var: Option<VarOf<Tag>>,
 }
 impl<Tag: AnimatorTag> Default for AnimationGroup<Tag> {
   fn default() -> Self {
     Self {
       conditional_animations: vec![],
       base_animation: None,
+      speed_var: None,
     }
   }
 }
@@ -172,6 +177,19 @@ macro_rules! log {
   };
 }
 impl<Tag: AnimatorTag> AnimationGroup<Tag> {
+  pub fn speed(&self, input: &Tag::Input) -> f32 {
+    match self.speed_var {
+      None => 1.0,
+      Some(ref var) => match input.get(var) {
+        InputValue::Float(speed) => speed,
+        InputValue::Boolean(_) => panic!("var {:?} shouldn't be a boolean", var),
+      },
+    }
+  }
+  pub fn with_speed(mut self, var: VarOf<Tag>) -> Self {
+    self.speed_var = Some(var);
+    self
+  }
   pub fn when(
     mut self,
     predicate: fn(&Tag::Input) -> bool,
@@ -199,6 +217,7 @@ where {
     self.base_animation = Some(animation);
     self
   }
+
   fn choose(&self, inputs: &Tag::Input) -> Option<&Animation<Tag::Event>> {
     // log!(Tag, "choosing with inputs: {inputs:?}");
 
@@ -230,13 +249,44 @@ impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
     Self {
       conditional_animations: vec![],
       base_animation: Some(value),
+      speed_var: None,
+    }
+  }
+}
+#[derive(Debug, Reflect)]
+pub struct AnimationTimer {
+  current: f32,
+  duration: f32,
+}
+
+impl AnimationTimer {
+  fn new(duration: f32) -> Self {
+    AnimationTimer {
+      current: 0.,
+      duration,
+    }
+  }
+
+  fn tick(&mut self, time: f32) {
+    self.current += time;
+  }
+
+  fn finished(&self) -> bool {
+    self.current > self.duration || self.current < 0.
+  }
+
+  fn remainder(&self, forward: bool) -> f32 {
+    if forward {
+      self.current - self.duration
+    } else {
+      self.current
     }
   }
 }
 
 #[derive(Component, Debug, Reflect)]
 pub struct Animator<Tag: AnimatorTag> {
-  timer: Timer,
+  timer: AnimationTimer,
   frame_index: usize,
   pub inputs: Tag::Input,
   next_shift: Option<Tag::Shift>,
@@ -285,7 +335,7 @@ impl<Tag: AnimatorTag> Default for Animator<Tag> {
     }
     let transitions = Tag::transitions();
     Self {
-      timer: Timer::new(Duration::from_secs_f32(0.0), TimerMode::Once),
+      timer: AnimationTimer::new(0.0),
       animations,
       state_machine: Machine::new(transitions, Tag::log()),
       frame_index: 0,
@@ -315,15 +365,15 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       .index;
   }
 
-  fn advance_frame_index(&mut self, frame_data: &FrameData<Tag::Event>) {
-    use std::cmp::min;
-
-    let frame_amount = frame_data.frames.len();
-    self.frame_index = if frame_data.loops {
-      (self.frame_index + 1) % frame_amount
+  fn advance_frame_index(&mut self, frame_data: &FrameData<Tag::Event>, animation_direction: i32) {
+    let frame_amount = frame_data.frames.len() as i32;
+    let frame_index = self.frame_index as i32;
+    let frame_index = if frame_data.loops {
+      (frame_index + frame_amount + animation_direction) % frame_amount
     } else {
-      min(self.frame_index + 1, frame_amount - 1)
+      i32::clamp(frame_index + animation_direction, 0, frame_amount)
     };
+    self.frame_index = frame_index as usize;
   }
 
   fn get_current_frame<'a>(&self, frame_data: &'a FrameData<Tag::Event>) -> &'a Frame<Tag::Event> {
@@ -333,22 +383,28 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       .expect("frame_index was out of bounds when advancing")
   }
 
-  fn next<'a>(&mut self, frame_data: &'a FrameData<Tag::Event>) -> &'a Frame<Tag::Event> {
-    self.advance_frame_index(frame_data);
+  fn next<'a>(
+    &mut self,
+    frame_data: &'a FrameData<Tag::Event>,
+    animation_direction: i32,
+  ) -> &'a Frame<Tag::Event> {
+    self.advance_frame_index(frame_data, animation_direction);
     self.get_current_frame(frame_data)
   }
 
   fn start_timer(&mut self, frame_data: &FrameData<Tag::Event>) {
-    self.timer = Timer::new(
+    self.timer = AnimationTimer::new(
       frame_data
         .frames
         .get(self.frame_index)
         .expect("frame_index was out of bounds when starting timer")
-        .duration,
-      TimerMode::Once,
+        .duration
+        .as_secs_f32(),
     );
   }
-
+  fn get_animation_group(&self) -> Option<&AnimationGroup<Tag>> {
+    self.animations.get(self.state_machine.current_state())
+  }
   fn get_animation(&self) -> Option<&Animation<Tag::Event>> {
     //SAFE: animation_index can only be changed via `change_animation`, and that checks that it is inbounds
     let animation_group = self.animations.get(self.state_machine.current_state())?;
@@ -386,16 +442,20 @@ pub fn execute_animations<Tag: AnimatorTag>(
       //   bevy::log::info!("[{tag_name}] Animation state is: {old_state:?}");
       // }
       // Required for animations which need to play fully before transitioning
+      //TODO: dont unwrap
+      let animation_group = animator.get_animation_group().unwrap();
+      let speed = animation_group.speed(&animator.inputs);
+
       let is_last_frame = animator
         .get_frames(direction)
         .map(|f| f.frames.len() - 1 == animator.frame_index)
         .unwrap_or(true);
 
       // ticking earlier cause I need the
-      animator.timer.tick(time.delta());
+      animator.timer.tick(time.delta_secs() * speed);
 
       let shift = animator.next_shift.take();
-      let has_animation_finished = animator.timer.just_finished();
+      let has_animation_finished = animator.timer.finished();
       let step_result =
         animator
           .state_machine
@@ -412,7 +472,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
         }
 
         if has_animation_finished {
-          let frame = animator.next(&frame_data);
+          let frame = animator.next(&frame_data, speed.signum_i32());
           atlas.index = frame.index;
 
           if let Some(animation) = animator.get_animation() {
