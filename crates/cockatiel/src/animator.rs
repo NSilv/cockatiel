@@ -367,20 +367,26 @@ impl<Tag: AnimatorTag> Animator<Tag> {
 
   fn advance_frame_index(&mut self, frame_data: &FrameData<Tag::Event>, animation_direction: i32) {
     let frame_amount = frame_data.frames.len() as i32;
-    let frame_index = self.frame_index as i32;
+    let old_frame_index = self.frame_index as i32;
     let frame_index = if frame_data.loops {
-      (frame_index + frame_amount + animation_direction) % frame_amount
+      (old_frame_index + frame_amount + animation_direction) % frame_amount
     } else {
-      i32::clamp(frame_index + animation_direction, 0, frame_amount)
+      i32::clamp(old_frame_index + animation_direction, 0, frame_amount - 1)
     };
+    assert!(
+      frame_index < frame_amount && frame_index >= 0,
+      "0 <= frame_index[{frame_index}] < frame_amount[{frame_amount}] is false",
+    );
     self.frame_index = frame_index as usize;
   }
 
   fn get_current_frame<'a>(&self, frame_data: &'a FrameData<Tag::Event>) -> &'a Frame<Tag::Event> {
-    frame_data
-      .frames
-      .get(self.frame_index)
-      .expect("frame_index was out of bounds when advancing")
+    frame_data.frames.get(self.frame_index).unwrap_or_else(|| {
+      panic!(
+        "frame_index was out of bounds when advancing: {} in {:#?}",
+        self.frame_index, frame_data.frames
+      )
+    })
   }
 
   fn next<'a>(
