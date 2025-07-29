@@ -361,9 +361,11 @@ impl<Tag: AnimatorTag> Animator<Tag> {
     new
   }
 
-  fn reset(&mut self, atlas: &mut TextureAtlas, frame_data: &FrameData<Tag::Event>) {
+  fn reset(&mut self, atlas: &mut TextureAtlas, frame_data: &FrameData<Tag::Event>, speed: f32) {
     self.frame_index = 0;
-    self.start_timer(frame_data, 0.0);
+    let remainder = self.timer.remainder(speed > 0.0);
+
+    self.start_timer(frame_data, remainder);
     atlas.index = frame_data
       .frames
       .first()
@@ -409,7 +411,8 @@ impl<Tag: AnimatorTag> Animator<Tag> {
   }
 
   fn start_timer(&mut self, frame_data: &FrameData<Tag::Event>, start_at: f32) {
-    self.timer = AnimationTimer::new(
+    self.timer = AnimationTimer::new_at(
+      start_at,
       frame_data
         .frames
         .get(self.frame_index)
@@ -494,7 +497,8 @@ pub fn execute_animations<Tag: AnimatorTag>(
             bevy::log::info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})");
             bevy::log::info!("[{tag_name}] look_direction: {direction:?}");
           }
-          animator.reset(atlas, &frame_data);
+
+          animator.reset(atlas, &frame_data, speed);
         }
 
         if has_animation_finished {
