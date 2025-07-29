@@ -266,6 +266,12 @@ impl AnimationTimer {
       duration,
     }
   }
+  fn new_at(start: f32, duration: f32) -> Self {
+    AnimationTimer {
+      current: start,
+      duration,
+    }
+  }
 
   fn tick(&mut self, time: f32) {
     self.current += time;
@@ -357,7 +363,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
 
   fn reset(&mut self, atlas: &mut TextureAtlas, frame_data: &FrameData<Tag::Event>) {
     self.frame_index = 0;
-    self.start_timer(frame_data);
+    self.start_timer(frame_data, 0.0);
     atlas.index = frame_data
       .frames
       .first()
@@ -402,7 +408,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
     self.get_current_frame(frame_data)
   }
 
-  fn start_timer(&mut self, frame_data: &FrameData<Tag::Event>) {
+  fn start_timer(&mut self, frame_data: &FrameData<Tag::Event>, start_at: f32) {
     self.timer = AnimationTimer::new(
       frame_data
         .frames
@@ -506,8 +512,8 @@ pub fn execute_animations<Tag: AnimatorTag>(
             };
             event_writer.send(animator_event);
           }
-
-          animator.start_timer(&frame_data);
+          let remainder = animator.timer.remainder(speed > 0.0);
+          animator.start_timer(&frame_data, remainder);
         }
       }
     }
