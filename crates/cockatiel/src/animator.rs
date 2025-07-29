@@ -373,10 +373,10 @@ impl<Tag: AnimatorTag> Animator<Tag> {
     } else {
       i32::clamp(old_frame_index + animation_direction, 0, frame_amount - 1)
     };
-    log!(
-      Tag,
-      "old_frame_index = {old_frame_index}, new_frame_index = {frame_index}"
-    );
+    if let Some(name) = Tag::log() {
+      info!("[{name}] old_frame_index = {old_frame_index}, new_frame_index = {frame_index}")
+    }
+
     assert!(
       frame_index < frame_amount && frame_index >= 0,
       "0 <= frame_index[{frame_index}] < frame_amount[{frame_amount}] is false",
