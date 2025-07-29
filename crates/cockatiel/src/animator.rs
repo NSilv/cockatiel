@@ -514,6 +514,12 @@ pub fn execute_animations<Tag: AnimatorTag>(
           }
           let remainder = animator.timer.remainder(speed > 0.0);
           animator.start_timer(&frame_data, remainder);
+          if let Some(name) = Tag::log() {
+            info!(
+              "[{name}] remainder: {}, new timer: {:?}",
+              remainder, animator.timer,
+            )
+          }
         }
       }
     }
