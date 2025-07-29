@@ -474,7 +474,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
         info!(
           "[{name}] ticking: {:?} by {}",
           animator.timer,
-          time.delta_secs()
+          time.delta_secs() * speed
         )
       }
       // ticking earlier cause I need the
