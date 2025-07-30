@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use bevy::{prelude::*, utils::hashbrown::HashMap};
 use if_chain::if_chain;
-use std::time::Duration;
+use std::{ops::Range, time::Duration};
 #[derive(Default)]
 pub struct AnimatorPlugin<Tag: AnimatorTag> {
   _marker: std::marker::PhantomData<Tag>,
@@ -52,10 +52,12 @@ impl<E: AnimationEventPayload> FrameData<E> {
   }
 
   pub fn homogenous(frame_count: usize, offset: usize, fps: u8, loops: bool) -> Self {
+    Self::range(0..frame_count + offset, fps, loops)
+  }
+
+  pub fn range(frames: Range<usize>, fps: u8, loops: bool) -> Self {
     let duration = Duration::from_secs_f32(1.0 / (fps as f32));
-    let frames: Vec<Frame<_>> = (0..frame_count)
-      .map(|i| Frame::new(i + offset, duration))
-      .collect();
+    let frames: Vec<Frame<_>> = frames.map(|i| Frame::new(i, duration)).collect();
 
     Self { frames, loops }
   }
