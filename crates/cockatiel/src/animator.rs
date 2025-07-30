@@ -253,6 +253,7 @@ impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
   }
 }
 
+#[derive(Debug)]
 enum AnimationDirection {
   Paused,
   Forward,
@@ -318,6 +319,20 @@ pub struct Animator<Tag: AnimatorTag> {
   animations: HashMap<Tag::State, AnimationGroup<Tag>>,
   state_machine: Machine<Tag::Input, Tag::State, Tag::Shift>,
 }
+impl<Tag: AnimatorTag> Animator<Tag> {
+  fn get_speed(&self) -> f32 {
+    self
+      .get_animation_group()
+      .map_or(1.0, |g| g.speed(&self.inputs))
+  }
+  fn is_last_frame(&self, look_dir: Option<&LookDirection>) -> bool {
+    self
+      .get_frames(look_dir)
+      .map(|f| f.frames.len() - 1 == self.frame_index)
+      .unwrap_or(true)
+  }
+}
+
 pub trait AnimatorTag: 'static + Send + Sync {
   type Input: AnimationInput;
   type State: AnimationState;
@@ -380,7 +395,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
     new
   }
 
-  fn reset(&mut self, atlas: &mut TextureAtlas, frame_data: &FrameData<Tag::Event>, speed: f32) {
+  fn reset(&mut self, atlas: &mut TextureAtlas, frame_data: &FrameData<Tag::Event>) {
     self.frame_index = 0;
     atlas.index = frame_data
       .frames
@@ -480,64 +495,56 @@ pub fn execute_animations<Tag: AnimatorTag>(
   mut event_writer: EventWriter<AnimationEvent<Tag::Event>>,
 ) {
   for (entity, mut animator, mut sprite, look_dir) in &mut query {
+    // Rotate the sprite based on look direction
+    if let Some(animation) = animator.get_animation() {
+      sprite.flip_x = animation.flip_x(look_dir);
+    }
+
     if let Some(atlas) = &mut sprite.texture_atlas {
-      let inputs = animator.inputs.clone();
-      // if let Some(tag_name) = Tag::log() {
-      //   bevy::log::info!("[{tag_name}] Animation state is: {old_state:?}");
-      // }
-      // Required for animations which need to play fully before transitioning
-
-      //TODO: dont unwrap
-      let speed = if let Some(animation_group) = animator.get_animation_group() {
-        animation_group.speed(&animator.inputs)
-      } else {
-        0.0
-      };
+      // Ticking the animator timer
+      let speed = animator.get_speed();
       let direction = &speed.into();
-      let abs_speed = speed.abs();
-
-      let is_last_frame = animator
-        .get_frames(look_dir)
-        .map(|f| f.frames.len() - 1 == animator.frame_index)
-        .unwrap_or(true);
+      animator.timer.tick(time.delta_secs() * speed.abs());
 
       if let Some(name) = Tag::log() {
         info!(
-          "[{name}] ticking: {:?} by {}",
+          "[{name}] ticking: {:?} {:?} by {}",
           animator.timer,
-          time.delta_secs() * abs_speed
+          direction,
+          time.delta_secs() * speed.abs()
         )
       }
-      animator.timer.tick(time.delta_secs() * abs_speed);
 
+      // Stepping the animator state machine
+      let inputs = animator.inputs.clone();
+      let is_last_frame = animator.is_last_frame(look_dir);
+      let has_frame_finished = animator.timer.finished();
       let shift = animator.next_shift.take();
-      let has_animation_finished = animator.timer.finished();
 
       let step_result =
         animator
           .state_machine
-          .step(&inputs, is_last_frame && has_animation_finished, shift);
+          .step(&inputs, is_last_frame && has_frame_finished, shift);
 
       let frame_data = animator.get_frames(look_dir).clone();
       if let Some(frame_data) = frame_data {
-        let current_state = animator.state_machine.current_state();
+        // Animator moved into a new state
         if step_result.changed {
           if let Some(tag_name) = Tag::log() {
-            bevy::log::info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})");
-            bevy::log::info!("[{tag_name}] look_direction: {look_dir:?}");
+            let current_state = animator.state_machine.current_state();
+            info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?}, look_dir: {look_dir:?})");
           }
 
-          animator.reset(atlas, &frame_data, speed);
+          animator.reset(atlas, &frame_data);
         }
 
-        if has_animation_finished {
+        // Animator has finished the frame
+        if has_frame_finished {
+          // Update sprite to match the new frame
           let frame = animator.next(&frame_data, direction);
           atlas.index = frame.index;
 
-          if let Some(animation) = animator.get_animation() {
-            sprite.flip_x = animation.flip_x(look_dir);
-          }
-
+          // If the new frame has an associated event, send it
           if let Some(ref event) = frame.event {
             let animator_event = AnimationEvent {
               entity,
@@ -546,6 +553,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
             event_writer.send(animator_event);
           }
 
+          // Start the timer for the new frame
           let duration = animator.get_frame_duration(&frame_data);
           let offset = animator.timer.excess();
           animator.timer = AnimationTimer::with_offset(duration, offset);
