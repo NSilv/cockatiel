@@ -285,38 +285,27 @@ pub struct AnimationTimer {
   duration: f32,
 }
 impl AnimationTimer {
-  fn new(duration: f32, direction: &AnimationDirection) -> Self {
-    Self::with_offset(duration, direction, 0.0)
+  fn new(duration: f32) -> Self {
+    Self::with_offset(duration, 0.0)
   }
 
-  fn with_offset(duration: f32, direction: &AnimationDirection, offset: f32) -> Self {
-    let current = match direction {
-      AnimationDirection::Paused => offset,
-      AnimationDirection::Forward => offset,
-      AnimationDirection::Backward => duration - offset,
-    };
-
-    AnimationTimer { current, duration }
-  }
-
-  fn excess(&self, direction: &AnimationDirection) -> f32 {
-    match direction {
-      AnimationDirection::Paused => 0.0,
-      AnimationDirection::Forward => self.duration - self.current,
-      AnimationDirection::Backward => self.current,
+  fn with_offset(duration: f32, offset: f32) -> Self {
+    AnimationTimer {
+      current: offset,
+      duration,
     }
+  }
+
+  fn excess(&self) -> f32 {
+    self.duration - self.current
   }
 
   fn tick(&mut self, time: f32) {
     self.current += time;
   }
 
-  fn finished(&self, direction: &AnimationDirection) -> bool {
-    match direction {
-      AnimationDirection::Paused => false,
-      AnimationDirection::Forward => self.current >= self.duration,
-      AnimationDirection::Backward => self.current <= 0.0,
-    }
+  fn finished(&self) -> bool {
+    self.current >= self.duration
   }
 }
 
@@ -371,7 +360,7 @@ impl<Tag: AnimatorTag> Default for Animator<Tag> {
     }
     let transitions = Tag::transitions();
     Self {
-      timer: AnimationTimer::new(0.0, &AnimationDirection::Forward),
+      timer: AnimationTimer::new(0.0),
       animations,
       state_machine: Machine::new(transitions, Tag::log()),
       frame_index: 0,
@@ -400,9 +389,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       .index;
 
     let duration = self.get_frame_duration(frame_data);
-    let direction = &speed.into();
-
-    self.timer = AnimationTimer::new(duration, direction);
+    self.timer = AnimationTimer::new(duration);
   }
 
   fn advance_frame_index(
@@ -507,6 +494,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
         0.0
       };
       let direction = &speed.into();
+      let abs_speed = speed.abs();
 
       let is_last_frame = animator
         .get_frames(look_dir)
@@ -517,13 +505,13 @@ pub fn execute_animations<Tag: AnimatorTag>(
         info!(
           "[{name}] ticking: {:?} by {}",
           animator.timer,
-          time.delta_secs() * speed
+          time.delta_secs() * abs_speed
         )
       }
-      animator.timer.tick(time.delta_secs() * speed);
+      animator.timer.tick(time.delta_secs() * abs_speed);
 
       let shift = animator.next_shift.take();
-      let has_animation_finished = animator.timer.finished(direction);
+      let has_animation_finished = animator.timer.finished();
 
       let step_result =
         animator
@@ -559,8 +547,8 @@ pub fn execute_animations<Tag: AnimatorTag>(
           }
 
           let duration = animator.get_frame_duration(&frame_data);
-          let offset = animator.timer.excess(direction);
-          animator.timer = AnimationTimer::with_offset(duration, direction, offset);
+          let offset = animator.timer.excess();
+          animator.timer = AnimationTimer::with_offset(duration, offset);
 
           if let Some(name) = Tag::log() {
             info!(
