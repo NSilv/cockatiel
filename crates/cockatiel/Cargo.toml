@@ -7,3 +7,4 @@ edition = "2021"
 macros = { path = "../macros" }
 bevy = "0.16.0"
 if_chain = "1.0.2"
+hashbrown = { version = "0.15.4" }
