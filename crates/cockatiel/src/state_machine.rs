@@ -14,7 +14,7 @@ animation! {
 
 use std::hash::Hash;
 
-use bevy::{log::debug, utils::HashMap};
+use bevy::log::debug;
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(dead_code)]
@@ -275,5 +275,6 @@ macro_rules! transition {
     Transition::new(State::any_state(), State::$to, false, None, Some($shift))
   };
 }
+use hashbrown::HashMap;
 use if_chain::if_chain;
 pub use transition;

@@ -1,5 +1,6 @@
 use crate::prelude::*;
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::prelude::*;
+use hashbrown::HashMap;
 use if_chain::if_chain;
 use std::{ops::Range, time::Duration};
 #[derive(Default)]
