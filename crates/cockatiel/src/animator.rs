@@ -256,7 +256,7 @@ impl<Tag: AnimatorTag> From<Animation<Tag::Event>> for AnimationGroup<Tag> {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum AnimationDirection {
   Paused,
   Forward,
@@ -273,7 +273,7 @@ impl From<f32> for AnimationDirection {
     }
   }
 }
-impl Into<i32> for &AnimationDirection {
+impl Into<i32> for AnimationDirection {
   fn into(self) -> i32 {
     match self {
       AnimationDirection::Paused => 0,
@@ -300,6 +300,12 @@ impl AnimationTimer {
     }
   }
 
+  /// restarts a timer, carrying over the excess of the previous timer into the new one
+  /// destructively updates the old one
+  fn restart_carry(&mut self, duration: f32) {
+    *self = AnimationTimer::with_offset(duration, self.excess());
+  }
+
   fn excess(&self) -> f32 {
     self.duration - self.current
   }
@@ -310,29 +316,6 @@ impl AnimationTimer {
 
   fn finished(&self) -> bool {
     self.current >= self.duration
-  }
-}
-
-#[derive(Component, Debug, Reflect)]
-pub struct Animator<Tag: AnimatorTag> {
-  timer: AnimationTimer,
-  frame_index: usize,
-  pub inputs: Tag::Input,
-  next_shift: Option<Tag::Shift>,
-  animations: HashMap<Tag::State, AnimationGroup<Tag>>,
-  state_machine: Machine<Tag::Input, Tag::State, Tag::Shift>,
-}
-impl<Tag: AnimatorTag> Animator<Tag> {
-  fn get_speed(&self) -> f32 {
-    self
-      .get_animation_group()
-      .map_or(1.0, |g| g.speed(&self.inputs))
-  }
-  fn is_last_frame(&self, look_dir: Option<&LookDirection>) -> bool {
-    self
-      .get_frames(look_dir)
-      .map(|f| f.frames.len() - 1 == self.frame_index)
-      .unwrap_or(true)
   }
 }
 
@@ -363,6 +346,16 @@ pub trait AnimatorTag: 'static + Send + Sync {
 pub struct AnimationEvent<E: AnimationEventPayload> {
   pub entity: Entity,
   pub event: E,
+}
+
+#[derive(Component, Debug, Reflect)]
+pub struct Animator<Tag: AnimatorTag> {
+  timer: AnimationTimer,
+  frame_index: usize,
+  pub inputs: Tag::Input,
+  next_shift: Option<Tag::Shift>,
+  animations: HashMap<Tag::State, AnimationGroup<Tag>>,
+  state_machine: Machine<Tag::Input, Tag::State, Tag::Shift>,
 }
 
 // in the same crate as trait, you can implement trait for anything you want
@@ -413,7 +406,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
   fn advance_frame_index(
     &mut self,
     frame_data: &FrameData<Tag::Event>,
-    direction: &AnimationDirection,
+    direction: AnimationDirection,
   ) {
     let frame_amount = frame_data.frames.len() as i32;
     let old_frame_index = self.frame_index as i32;
@@ -448,7 +441,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
   fn next<'a>(
     &mut self,
     frame_data: &'a FrameData<Tag::Event>,
-    direction: &AnimationDirection,
+    direction: AnimationDirection,
   ) -> &'a Frame<Tag::Event> {
     self.advance_frame_index(frame_data, direction);
     self.get_current_frame(frame_data)
@@ -485,6 +478,27 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       _ => {}
     }
   }
+  fn get_speed(&self) -> f32 {
+    self
+      .get_animation_group()
+      .map_or(1.0, |g| g.speed(&self.inputs))
+  }
+  fn is_last_frame(&self, look_dir: Option<&LookDirection>) -> bool {
+    self
+      .get_frames(look_dir)
+      .map(|f| f.frames.len() - 1 == self.frame_index)
+      .unwrap_or(true)
+  }
+
+  fn step_machine(
+    &mut self,
+    is_current_animation_finished: bool,
+  ) -> AnimationStepResult<Tag::State> {
+    let shift = self.next_shift.take();
+    self
+      .state_machine
+      .step(&self.inputs, is_current_animation_finished, shift)
+  }
 }
 
 pub fn execute_animations<Tag: AnimatorTag>(
@@ -506,7 +520,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
     if let Some(atlas) = &mut sprite.texture_atlas {
       // Ticking the animator timer
       let speed = animator.get_speed();
-      let direction = &speed.into();
+      let direction = speed.into();
       animator.timer.tick(time.delta_secs() * speed.abs());
 
       if let Some(name) = Tag::log() {
@@ -519,15 +533,9 @@ pub fn execute_animations<Tag: AnimatorTag>(
       }
 
       // Stepping the animator state machine
-      let inputs = animator.inputs.clone();
       let is_last_frame = animator.is_last_frame(look_dir);
       let has_frame_finished = animator.timer.finished();
-      let shift = animator.next_shift.take();
-
-      let step_result =
-        animator
-          .state_machine
-          .step(&inputs, is_last_frame && has_frame_finished, shift);
+      let step_result = animator.step_machine(is_last_frame && has_frame_finished);
 
       let frame_data = animator.get_frames(look_dir).clone();
       if let Some(frame_data) = frame_data {
@@ -535,7 +543,7 @@ pub fn execute_animations<Tag: AnimatorTag>(
         if step_result.changed {
           if let Some(tag_name) = Tag::log() {
             let current_state = animator.state_machine.current_state();
-            info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?}, look_dir: {look_dir:?})");
+            info!("[{tag_name}] Animation state changed to {current_state:?} (step_result: {step_result:?}, look_dir: {look_dir:?})");
           }
 
           animator.reset(atlas, &frame_data);
@@ -553,20 +561,12 @@ pub fn execute_animations<Tag: AnimatorTag>(
               entity,
               event: event.clone(),
             };
-            event_writer.send(animator_event);
+            event_writer.write(animator_event);
           }
 
           // Start the timer for the new frame
           let duration = animator.get_frame_duration(&frame_data);
-          let offset = animator.timer.excess();
-          animator.timer = AnimationTimer::with_offset(duration, offset);
-
-          if let Some(name) = Tag::log() {
-            info!(
-              "[{name}] remainder: {}, new timer: {:?}",
-              offset, animator.timer,
-            )
-          }
+          animator.timer.restart_carry(duration);
         }
       }
     }
