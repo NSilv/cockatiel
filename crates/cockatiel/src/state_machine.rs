@@ -276,6 +276,5 @@ macro_rules! transition {
     Transition::new(State::any_state(), State::$to, false, None, Some($shift))
   };
 }
-use hashbrown::HashMap;
 use if_chain::if_chain;
 pub use transition;
