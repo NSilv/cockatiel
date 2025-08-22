@@ -2,7 +2,9 @@ use core::panic;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, DeriveInput, Ident, Token};
+use syn::{
+  parenthesized, parse::Parse, parse_macro_input, punctuated::Punctuated, DeriveInput, Ident, Token,
+};
 
 #[proc_macro_derive(AnimationEventPayload)]
 pub fn animation_event_derive(event: TokenStream) -> TokenStream {
@@ -197,14 +199,32 @@ impl Parse for Arrow {
 enum Condition {
   IsTrue(Ident),
   IsFalse((Token![!], Ident)),
+  And(Box<Condition>, Box<Condition>),
 }
 impl Parse for Condition {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
     let lookahead = input.lookahead1();
     if lookahead.peek(Token![!]) {
-      Ok(Self::IsFalse((input.parse()?, input.parse()?)))
+      return Ok(Self::IsFalse((input.parse()?, input.parse()?)));
+    }
+    let and_or_var: Ident = input.parse()?;
+
+    if and_or_var == "and" {
+      let content;
+      let _ = parenthesized!(content in input);
+      let values = content.parse_terminated(Condition::parse, Token![,])?;
+      let mut iter = values.iter();
+      let Some(lhs) = iter.next() else {
+        panic!("no first argument");
+      };
+
+      let Some(rhs) = iter.next() else {
+        panic!("no second argument");
+      };
+
+      Ok(Self::And(Box::new(lhs.clone()), Box::new(rhs.clone())))
     } else {
-      Ok(Self::IsTrue(input.parse()?))
+      Ok(Self::IsTrue(and_or_var))
     }
   }
 }
@@ -286,6 +306,31 @@ fn camelize(ident: Ident) -> Ident {
   let camel_text = value.as_str();
   Ident::new(camel_text, ident.span())
 }
+
+fn convert_to_condition(cond: Condition) -> proc_macro2::TokenStream {
+  match cond {
+    Condition::IsTrue(ident) => {
+      let camel_ident = camelize(ident);
+      quote!(
+          ::cockatiel::prelude::Condition::IsTrue(Vars::#camel_ident)
+      )
+    }
+    Condition::IsFalse((_, ident)) => {
+      let camel_ident = camelize(ident);
+
+      quote!(
+        ::cockatiel::prelude::Condition::IsFalse(Vars::#camel_ident)
+      )
+    }
+    Condition::And(lhs, rhs) => {
+      let lhs_tokens = convert_to_condition(*lhs);
+      let rhs_token = convert_to_condition(*rhs);
+      quote!(
+        ::cockatiel::prelude::Condition::And(Box::new(#lhs_tokens), Box::new(#rhs_token))
+      )
+    }
+  }
+}
 fn transitions_impl(item: TokenStream) -> TokenStream {
   let input = parse_macro_input!(item as Transitions);
   let transitions = input.transitions.iter().map(|transition| {
@@ -295,21 +340,7 @@ fn transitions_impl(item: TokenStream) -> TokenStream {
     let (condition, shift) = match transition.after.clone() {
       None => (quote!(None), quote!(None)),
       Some(After::Condition(cond)) => {
-        let cond = match cond {
-          Condition::IsTrue(ident) => {
-            let camel_ident = camelize(ident);
-            quote!(
-                ::cockatiel::prelude::Condition::IsTrue(Vars::#camel_ident)
-            )
-          }
-          Condition::IsFalse((_, ident)) => {
-            let camel_ident = camelize(ident);
-
-            quote!(
-              ::cockatiel::prelude::Condition::IsFalse(Vars::#camel_ident)
-            )
-          }
-        };
+        let cond = convert_to_condition(cond);
         (quote! {Some(#cond)}, quote!(None))
       }
       Some(After::Shift(Shift { shift })) => {

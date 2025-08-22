@@ -1,0 +1,12 @@
+- [] add int (i32) and uint (u32) support to AnimationInput + Vars
+- [] turn complex conditional expressions (`Condition`) into prefix form (lisp-like)
+- [] implement more conditional expression operators
+  - [] and : bool... -> bool
+  - [] or : bool... -> bool
+  - [] <,<=,>,>= : float | int -> bool
+  - [] == : any... -> bool
+  - [] not : bool -> bool
+- [] implement full `animation!` macro so that we don't have to manually define a bunch of enums and structs of boilerplate
+- [] write proper tests
+- [] depend directly on hashbrown instead of using bevy::utils::hashbrown
+- [] update bevy version

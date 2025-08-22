@@ -14,7 +14,8 @@ animation! {
 
 use std::hash::Hash;
 
-use bevy::log::debug;
+use bevy_log::{debug, info};
+use hashbrown::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 #[allow(dead_code)]
@@ -229,7 +230,7 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
 
     if let Some(t) = transition {
       if let Some(name) = &self.log {
-        bevy::log::info!(
+        info!(
           "[{name}] found transition: {t:?}. old_state = {:?}, new_state = {:?}",
           self.current_state,
           t.to.clone()

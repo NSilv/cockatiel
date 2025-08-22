@@ -1,5 +1,7 @@
 use crate::prelude::*;
+use crate::sign::SignumInt;
 use bevy::prelude::*;
+use bevy_log::info;
 use hashbrown::HashMap;
 use if_chain::if_chain;
 use std::{ops::Range, time::Duration};
@@ -233,7 +235,7 @@ where {
 
       if predicate(inputs) {
         if let Some(tag_name) = Tag::log() {
-          bevy::log::info!("[{tag_name}] AnimationGroup::choose - Chosen animation named '{name}'!")
+          info!("[{tag_name}] AnimationGroup::choose - Chosen animation named '{name}'!")
         }
         return Some(animation);
       }
@@ -518,10 +520,22 @@ pub fn execute_animations<Tag: AnimatorTag>(
     }
 
     if let Some(atlas) = &mut sprite.texture_atlas {
-      // Ticking the animator timer
-      let speed = animator.get_speed();
-      let direction = speed.into();
-      animator.timer.tick(time.delta_secs() * speed.abs());
+      let inputs = animator.inputs.clone();
+      // if let Some(tag_name) = Tag::log() {
+      //   info!("[{tag_name}] Animation state is: {old_state:?}");
+      // }
+      // Required for animations which need to play fully before transitioning
+      //TODO: dont unwrap
+      let speed = if let Some(animation_group) = animator.get_animation_group() {
+        animation_group.speed(&animator.inputs)
+      } else {
+        0.0
+      };
+
+      let is_last_frame = animator
+        .get_frames(direction)
+        .map(|f| f.frames.len() - 1 == animator.frame_index)
+        .unwrap_or(true);
 
       if let Some(name) = Tag::log() {
         info!(
@@ -542,8 +556,8 @@ pub fn execute_animations<Tag: AnimatorTag>(
         // Animator moved into a new state
         if step_result.changed {
           if let Some(tag_name) = Tag::log() {
-            let current_state = animator.state_machine.current_state();
-            info!("[{tag_name}] Animation state changed to {current_state:?} (step_result: {step_result:?}, look_dir: {look_dir:?})");
+            info!("[{tag_name}] Animation state changed to {current_state:?} with inputs: {inputs:?} (step_result: {step_result:?})");
+            info!("[{tag_name}] look_direction: {direction:?}");
           }
 
           animator.reset(atlas, &frame_data);
@@ -637,7 +651,4 @@ impl From<Vec3> for LookDirection {
   fn from(value: Vec3) -> Self {
     Self::from(value.truncate())
   }
-}
-macro_rules! var {
-  ($var:ident) => {};
 }
