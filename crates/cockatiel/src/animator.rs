@@ -197,7 +197,8 @@ impl<Tag: AnimatorTag> AnimationGroup<Tag> {
       None => 1.0,
       Some(ref var) => match input.get(var) {
         InputValue::Float(speed) => speed,
-        InputValue::Boolean(_) => panic!("var {:?} shouldn't be a boolean", var),
+        InputValue::Boolean(_) => panic!("var {:?} shouldn't be a bool", var),
+        InputValue::UInt(_) => panic!("var {:?} shouldn't be a u32", var),
       },
     }
   }

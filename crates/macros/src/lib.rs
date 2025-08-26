@@ -122,7 +122,8 @@ fn choose_inputvalue(field: &syn::Field) -> syn::Ident {
       match ty_ident.to_string().as_str() {
         "bool" => syn::Ident::new("Boolean", proc_macro2::Span::call_site()),
         "f32" => syn::Ident::new("Float", proc_macro2::Span::call_site()),
-        _ => panic!("field type is not bool or float"),
+        "u32" => syn::Ident::new("UInt", proc_macro2::Span::call_site()),
+        _ => panic!("field type is not bool, float or uint"),
       }
     }
     _ => panic!("field type is not bool"),

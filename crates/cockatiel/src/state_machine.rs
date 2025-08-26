@@ -22,6 +22,7 @@ use hashbrown::HashMap;
 pub enum InputValue {
   Boolean(bool),
   Float(f32),
+  UInt(u32),
 }
 pub trait AnimationInput: Clone + Default + std::fmt::Debug + Send + Sync {
   type Vars: Clone + std::fmt::Debug + Send + Sync;
