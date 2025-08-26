@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{animatable::Animatable, prelude::*};
 use bevy::prelude::*;
 use bevy_log::info;
 use hashbrown::HashMap;
@@ -13,7 +13,19 @@ impl<Tag: AnimatorTag> Plugin for AnimatorPlugin<Tag> {
     app
       .add_systems(
         Update,
-        (execute_animations::<Tag>, sync_animations::<Tag>).chain(),
+        (
+          execute_animations::<Tag, Sprite>,
+          sync_animations::<Tag, Sprite>,
+        )
+          .chain(),
+      )
+      .add_systems(
+        Update,
+        (
+          execute_animations::<Tag, ImageNode>,
+          sync_animations::<Tag, ImageNode>,
+        )
+          .chain(),
       )
       .add_event::<AnimationEvent<Tag::Event>>();
   }
@@ -501,23 +513,23 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       .step(&self.inputs, is_current_animation_finished, shift)
   }
 }
-pub fn execute_animations<Tag: AnimatorTag>(
+pub fn execute_animations<Tag: AnimatorTag, Anim: Animatable>(
   time: Res<Time>,
   mut query: Query<(
     Entity,
     &mut Animator<Tag>,
-    &mut Sprite,
+    &mut Anim,
     Option<&LookDirection>,
   )>,
   mut event_writer: EventWriter<AnimationEvent<Tag::Event>>,
 ) {
-  for (entity, mut animator, mut sprite, look_dir) in &mut query {
+  for (entity, mut animator, mut animatable, look_dir) in &mut query {
     // Rotate the sprite based on look direction
     if let Some(animation) = animator.get_animation() {
-      sprite.flip_x = animation.flip_x(look_dir);
+      animatable.set_flip_x(animation.flip_x(look_dir));
     }
 
-    if let Some(atlas) = &mut sprite.texture_atlas {
+    if let Some(atlas) = animatable.get_texture_atlas_mut() {
       // Ticking the animator timer
       let speed = animator.get_speed();
       let direction = speed.into();
@@ -590,11 +602,11 @@ impl<Tag: AnimatorTag> DerivedAnimator<Tag> {
   }
 }
 
-pub fn sync_animations<Tag: AnimatorTag>(
+pub fn sync_animations<Tag: AnimatorTag, Anim: Animatable>(
   sources: Query<(&Animator<Tag>, Option<&LookDirection>)>,
-  mut targets: Query<(&mut Sprite, &mut DerivedAnimator<Tag>)>,
+  mut targets: Query<(&mut Anim, &mut DerivedAnimator<Tag>)>,
 ) {
-  for (mut sprite, target) in &mut targets {
+  for (mut animatable, target) in &mut targets {
     let Ok((source, look_dir)) = sources.get(target.animator_target) else {
       continue;
     };
@@ -605,8 +617,8 @@ pub fn sync_animations<Tag: AnimatorTag>(
       if let Some(frame_data) = animation.get(look_dir);
       if let Some(frame) = frame_data.frames.get(source.frame_index);
       then {
-        sprite.flip_x = animation.flip_x(look_dir);
-        if let Some(atlas) = &mut sprite.texture_atlas {
+        animatable.set_flip_x( animation.flip_x(look_dir));
+        if let Some(atlas) = animatable.get_texture_atlas_mut() {
             atlas.index = frame.index;
         }
       }

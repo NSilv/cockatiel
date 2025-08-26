@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.dependencies]
-bevy = { version = "0.16.1", default-features = false, features = ["bevy_sprite"]}
+bevy = { version = "0.16.1", default-features = false, features = ["bevy_sprite", "bevy_ui"]}
 bevy_log = "0.16.1"
 
 if_chain = "1.0.2"
