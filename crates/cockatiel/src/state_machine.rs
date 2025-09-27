@@ -34,6 +34,26 @@ pub trait AnimationInput: Clone + Default + std::fmt::Debug + Send + Sync {
 pub enum Condition<Input: AnimationInput> {
   IsTrue(<Input as AnimationInput>::Vars),
   IsFalse(<Input as AnimationInput>::Vars),
+  Equal(
+    <Input as AnimationInput>::Vars,
+    <Input as AnimationInput>::Vars,
+  ),
+  Lesser(
+    <Input as AnimationInput>::Vars,
+    <Input as AnimationInput>::Vars,
+  ),
+  LesserOrEqual(
+    <Input as AnimationInput>::Vars,
+    <Input as AnimationInput>::Vars,
+  ),
+  Greater(
+    <Input as AnimationInput>::Vars,
+    <Input as AnimationInput>::Vars,
+  ),
+  GraterOrEqual(
+    <Input as AnimationInput>::Vars,
+    <Input as AnimationInput>::Vars,
+  ),
   And(Box<Condition<Input>>, Box<Condition<Input>>),
 }
 impl<Input: AnimationInput> Condition<Input> {
@@ -46,6 +66,40 @@ impl<Input: AnimationInput> Condition<Input> {
       Condition::IsFalse(var) => match input.get(var) {
         InputValue::Boolean(b) => !b,
         _ => panic!("input value is not boolean"),
+      },
+      Condition::Equal(a, b) => match (input.get(a), input.get(b)) {
+        (InputValue::Float(a), InputValue::Float(b)) => a == b,
+        (InputValue::UInt(a), InputValue::UInt(b)) => a == b,
+        (InputValue::Boolean(a), InputValue::Boolean(b)) => a == b,
+        _ => false,
+      },
+      Condition::Lesser(a, b) => match (input.get(a), input.get(b)) {
+        (InputValue::Float(a), InputValue::Float(b)) => a < b,
+        (InputValue::UInt(a), InputValue::UInt(b)) => a < b,
+        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
+        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
+        _ => false,
+      },
+      Condition::LesserOrEqual(a, b) => match (input.get(a), input.get(b)) {
+        (InputValue::Float(a), InputValue::Float(b)) => a <= b,
+        (InputValue::UInt(a), InputValue::UInt(b)) => a <= b,
+        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
+        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
+        _ => false,
+      },
+      Condition::Greater(a, b) => match (input.get(a), input.get(b)) {
+        (InputValue::Float(a), InputValue::Float(b)) => a > b,
+        (InputValue::UInt(a), InputValue::UInt(b)) => a > b,
+        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
+        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
+        _ => false,
+      },
+      Condition::GraterOrEqual(a, b) => match (input.get(a), input.get(b)) {
+        (InputValue::Float(a), InputValue::Float(b)) => a >= b,
+        (InputValue::UInt(a), InputValue::UInt(b)) => a >= b,
+        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
+        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
+        _ => false,
       },
       Condition::And(a, b) => a.evaluate(input) && b.evaluate(input),
     }
