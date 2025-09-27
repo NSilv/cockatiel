@@ -492,11 +492,13 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       _ => {}
     }
   }
+
   fn get_speed(&self) -> f32 {
     self
       .get_animation_group()
       .map_or(1.0, |g| g.speed(&self.inputs))
   }
+
   fn is_last_frame(&self, look_dir: Option<&LookDirection>) -> bool {
     self
       .get_frames(look_dir)
@@ -514,6 +516,7 @@ impl<Tag: AnimatorTag> Animator<Tag> {
       .step(&self.inputs, is_current_animation_finished, shift)
   }
 }
+
 pub fn execute_animations<Tag: AnimatorTag, Anim: Animatable>(
   time: Res<Time>,
   mut query: Query<(
@@ -577,9 +580,11 @@ pub fn execute_animations<Tag: AnimatorTag, Anim: Animatable>(
             event_writer.write(animator_event);
           }
 
-          // Start the timer for the new frame
-          let duration = animator.get_frame_duration(&frame_data);
-          animator.timer.restart_carry(duration);
+          // Start the timer for the new frame, unless we're at the end and don't loop
+          if !is_last_frame || frame_data.loops {
+            let duration = animator.get_frame_duration(&frame_data);
+            animator.timer.restart_carry(duration);
+          }
         }
       }
     }
