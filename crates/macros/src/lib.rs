@@ -220,9 +220,12 @@ impl LogicVar {
     match self {
       LogicVar::Var(var) => {
         let var = camelize(var);
-        quote!(Vars::#var)
+        quote!(::cockatiel::prelude::LogicVar::Var(Vars::#var))
       }
-      LogicVar::Imm(imm) => imm.into_tokens(),
+      LogicVar::Imm(imm) => {
+        let imm = imm.into_tokens();
+        quote!(::cockatiel::prelude::LogicVar::Imm(#imm))
+      }
     }
   }
 }
