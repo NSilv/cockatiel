@@ -17,7 +17,7 @@ use std::hash::Hash;
 use bevy_log::{debug, info};
 use hashbrown::HashMap;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 #[allow(dead_code)]
 pub enum InputValue {
   Boolean(bool),
@@ -28,78 +28,74 @@ pub trait AnimationInput: Clone + Default + std::fmt::Debug + Send + Sync {
   type Vars: Clone + std::fmt::Debug + Send + Sync;
   fn get(&self, var: &Self::Vars) -> InputValue;
 }
+#[derive(Clone, Debug)]
+pub enum LogicVar<Input: AnimationInput> {
+  Var(Input::Vars),
+  Imm(InputValue),
+}
+impl<Input: AnimationInput> LogicVar<Input> {
+  fn resolve(&self, input: &Input) -> InputValue {
+    match self {
+      Self::Var(var) => input.get(var),
+      Self::Imm(val) => *val,
+    }
+  }
+}
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub enum Condition<Input: AnimationInput> {
-  IsTrue(<Input as AnimationInput>::Vars),
-  IsFalse(<Input as AnimationInput>::Vars),
-  Equal(
-    <Input as AnimationInput>::Vars,
-    <Input as AnimationInput>::Vars,
-  ),
-  Lesser(
-    <Input as AnimationInput>::Vars,
-    <Input as AnimationInput>::Vars,
-  ),
-  LesserOrEqual(
-    <Input as AnimationInput>::Vars,
-    <Input as AnimationInput>::Vars,
-  ),
-  Greater(
-    <Input as AnimationInput>::Vars,
-    <Input as AnimationInput>::Vars,
-  ),
-  GraterOrEqual(
-    <Input as AnimationInput>::Vars,
-    <Input as AnimationInput>::Vars,
-  ),
+  IsTrue(Input::Vars),
+  IsFalse(Input::Vars),
+  Eq(LogicVar<Input>, LogicVar<Input>),
+  Lt(LogicVar<Input>, LogicVar<Input>),
+  Lte(LogicVar<Input>, LogicVar<Input>),
+  Gt(LogicVar<Input>, LogicVar<Input>),
+  Gte(LogicVar<Input>, LogicVar<Input>),
   And(Box<Condition<Input>>, Box<Condition<Input>>),
 }
 impl<Input: AnimationInput> Condition<Input> {
   fn evaluate(&self, input: &Input) -> bool {
+    use InputValue::*;
     match self {
       Condition::IsTrue(var) => match input.get(var) {
-        InputValue::Boolean(b) => b,
+        Boolean(b) => b,
         _ => panic!("input value is not boolean"),
       },
       Condition::IsFalse(var) => match input.get(var) {
-        InputValue::Boolean(b) => !b,
+        Boolean(b) => !b,
         _ => panic!("input value is not boolean"),
       },
-      Condition::Equal(a, b) => match (input.get(a), input.get(b)) {
-        (InputValue::Float(a), InputValue::Float(b)) => a == b,
-        (InputValue::UInt(a), InputValue::UInt(b)) => a == b,
-        (InputValue::Boolean(a), InputValue::Boolean(b)) => a == b,
-        _ => false,
+      Condition::Eq(lhs, rhs) => match (lhs.resolve(input), rhs.resolve(input)) {
+        (Float(a), Float(b)) => a == b,
+        (UInt(a), UInt(b)) => a == b,
+        (Boolean(a), Boolean(b)) => a == b,
+        _ => panic!("inputs have different types"),
       },
-      Condition::Lesser(a, b) => match (input.get(a), input.get(b)) {
-        (InputValue::Float(a), InputValue::Float(b)) => a < b,
-        (InputValue::UInt(a), InputValue::UInt(b)) => a < b,
-        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
-        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
-        _ => false,
+      Condition::Lt(lhs, rhs) => match (lhs.resolve(input), rhs.resolve(input)) {
+        (Float(a), Float(b)) => a < b,
+        (UInt(a), UInt(b)) => a < b,
+        (Boolean(_), _) | (_, Boolean(_)) => panic!("input value is not numeric"),
+        (UInt(_), Float(_)) | (Float(_), UInt(_)) => panic!("inputs have different types"),
       },
-      Condition::LesserOrEqual(a, b) => match (input.get(a), input.get(b)) {
-        (InputValue::Float(a), InputValue::Float(b)) => a <= b,
-        (InputValue::UInt(a), InputValue::UInt(b)) => a <= b,
-        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
-        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
-        _ => false,
+      Condition::Lte(lhs, rhs) => match (lhs.resolve(input), rhs.resolve(input)) {
+        (Float(a), Float(b)) => a <= b,
+        (UInt(a), UInt(b)) => a <= b,
+        (Boolean(_), _) | (_, Boolean(_)) => panic!("input value is not numeric"),
+        (UInt(_), Float(_)) | (Float(_), UInt(_)) => panic!("inputs have different types"),
       },
-      Condition::Greater(a, b) => match (input.get(a), input.get(b)) {
-        (InputValue::Float(a), InputValue::Float(b)) => a > b,
-        (InputValue::UInt(a), InputValue::UInt(b)) => a > b,
-        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
-        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
-        _ => false,
+      Condition::Gt(lhs, rhs) => match (lhs.resolve(input), rhs.resolve(input)) {
+        (Float(a), Float(b)) => a > b,
+        (UInt(a), UInt(b)) => a > b,
+        (Boolean(_), _) | (_, Boolean(_)) => panic!("input value is not numeric"),
+        (UInt(_), Float(_)) | (Float(_), UInt(_)) => panic!("inputs have different types"),
       },
-      Condition::GraterOrEqual(a, b) => match (input.get(a), input.get(b)) {
-        (InputValue::Float(a), InputValue::Float(b)) => a >= b,
-        (InputValue::UInt(a), InputValue::UInt(b)) => a >= b,
-        (InputValue::Boolean(_), _) => panic!("input value is not numeric"),
-        (_, InputValue::Boolean(_)) => panic!("input value is not numeric"),
-        _ => false,
+      Condition::Gte(lhs, rhs) => match (lhs.resolve(input), rhs.resolve(input)) {
+        (Float(a), Float(b)) => a >= b,
+        (UInt(a), UInt(b)) => a >= b,
+        (Boolean(_), _) | (_, Boolean(_)) => panic!("input value is not numeric"),
+
+        (UInt(_), Float(_)) | (Float(_), UInt(_)) => panic!("inputs have different types"),
       },
       Condition::And(a, b) => a.evaluate(input) && b.evaluate(input),
     }

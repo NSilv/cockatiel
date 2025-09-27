@@ -195,12 +195,143 @@ impl Parse for Arrow {
     }
   }
 }
+#[derive(Clone, Debug)]
+enum Immediate {
+  Bool(bool),
+  UInt(u32),
+  Float(f32),
+}
+impl Immediate {
+  fn into_tokens(self) -> proc_macro2::TokenStream {
+    match self {
+      Immediate::Bool(b) => quote!(::cockatiel::prelude::InputValue::Boolean(#b)),
+      Immediate::UInt(u) => quote!(::cockatiel::prelude::InputValue::UInt(#u)),
+      Immediate::Float(f) => quote!(::cockatiel::prelude::InputValue::Float(#f)),
+    }
+  }
+}
+#[derive(Clone, Debug)]
+enum LogicVar {
+  Var(Ident),
+  Imm(Immediate),
+}
+impl LogicVar {
+  fn into_tokens(self) -> proc_macro2::TokenStream {
+    match self {
+      LogicVar::Var(var) => {
+        let var = camelize(var);
+        quote!(Vars::#var)
+      }
+      LogicVar::Imm(imm) => imm.into_tokens(),
+    }
+  }
+}
+impl Parse for LogicVar {
+  fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    let lookahead = input.lookahead1();
+    if lookahead.peek(syn::LitBool) {
+      input
+        .parse::<syn::LitBool>()
+        .map(|b| b.value)
+        .map(Immediate::Bool)
+        .map(Self::Imm)
+    } else if lookahead.peek(syn::LitInt) {
+      input
+        .parse::<syn::LitInt>()
+        .and_then(|i| i.base10_parse::<u32>())
+        .map(Immediate::UInt)
+        .map(Self::Imm)
+    } else if lookahead.peek(syn::LitFloat) {
+      input
+        .parse::<syn::LitFloat>()
+        .and_then(|f| f.base10_parse::<f32>())
+        .map(Immediate::Float)
+        .map(Self::Imm)
+    } else {
+      Ok(Self::Var(input.parse()?))
+    }
+  }
+}
 #[derive(Clone)]
-
 enum Condition {
   IsTrue(Ident),
   IsFalse((Token![!], Ident)),
   And(Box<Condition>, Box<Condition>),
+  Eq(LogicVar, LogicVar),
+  Lt(LogicVar, LogicVar),
+  Lte(LogicVar, LogicVar),
+  Gt(LogicVar, LogicVar),
+  Gte(LogicVar, LogicVar),
+}
+impl Condition {
+  fn into_tokens(self) -> proc_macro2::TokenStream {
+    match self {
+      Condition::IsTrue(ident) => {
+        let camel_ident = camelize(ident);
+        quote!(
+            ::cockatiel::prelude::Condition::IsTrue(Vars::#camel_ident)
+        )
+      }
+      Condition::IsFalse((_, ident)) => {
+        let camel_ident = camelize(ident);
+
+        quote!(
+          ::cockatiel::prelude::Condition::IsFalse(Vars::#camel_ident)
+        )
+      }
+      Condition::And(lhs, rhs) => {
+        let lhs_tokens = lhs.into_tokens();
+        let rhs_token = rhs.into_tokens();
+        quote!(
+          ::cockatiel::prelude::Condition::And(Box::new(#lhs_tokens), Box::new(#rhs_token))
+        )
+      }
+      Condition::Eq(lhs, rhs) => {
+        let lhs = lhs.into_tokens();
+        let rhs = rhs.into_tokens();
+
+        quote!(::cockatiel::prelude::Condition::Eq(#lhs, #rhs))
+      }
+      Condition::Gt(lhs, rhs) => {
+        let lhs = lhs.into_tokens();
+        let rhs = rhs.into_tokens();
+
+        quote!(::cockatiel::prelude::Condition::Gt(#lhs, #rhs))
+      }
+      Condition::Gte(lhs, rhs) => {
+        let lhs = lhs.into_tokens();
+        let rhs = rhs.into_tokens();
+
+        quote!(::cockatiel::prelude::Condition::Gte(#lhs, #rhs))
+      }
+      Condition::Lt(lhs, rhs) => {
+        let lhs = lhs.into_tokens();
+        let rhs = rhs.into_tokens();
+
+        quote!(::cockatiel::prelude::Condition::Lt(#lhs, #rhs))
+      }
+      Condition::Lte(lhs, rhs) => {
+        let lhs = lhs.into_tokens();
+        let rhs = rhs.into_tokens();
+
+        quote!(::cockatiel::prelude::Condition::Lte(#lhs, #rhs))
+      }
+    }
+  }
+  fn parse_logicvars(input: syn::parse::ParseStream) -> syn::Result<(LogicVar, LogicVar)> {
+    let content;
+    let _ = parenthesized!(content in input);
+    let values = content.parse_terminated(LogicVar::parse, Token![,])?;
+    let mut iter = values.into_iter();
+    let Some(lhs) = iter.next() else {
+      panic!("no first argument");
+    };
+
+    let Some(rhs) = iter.next() else {
+      panic!("no second argument");
+    };
+    Ok((lhs, rhs))
+  }
 }
 impl Parse for Condition {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
@@ -209,23 +340,43 @@ impl Parse for Condition {
       return Ok(Self::IsFalse((input.parse()?, input.parse()?)));
     }
     let and_or_var: Ident = input.parse()?;
+    match and_or_var.to_string().as_str() {
+      "and" => {
+        let content;
+        let _ = parenthesized!(content in input);
+        let values = content.parse_terminated(Condition::parse, Token![,])?;
+        let mut iter = values.iter();
+        let Some(lhs) = iter.next() else {
+          panic!("no first argument");
+        };
 
-    if and_or_var == "and" {
-      let content;
-      let _ = parenthesized!(content in input);
-      let values = content.parse_terminated(Condition::parse, Token![,])?;
-      let mut iter = values.iter();
-      let Some(lhs) = iter.next() else {
-        panic!("no first argument");
-      };
+        let Some(rhs) = iter.next() else {
+          panic!("no second argument");
+        };
 
-      let Some(rhs) = iter.next() else {
-        panic!("no second argument");
-      };
-
-      Ok(Self::And(Box::new(lhs.clone()), Box::new(rhs.clone())))
-    } else {
-      Ok(Self::IsTrue(and_or_var))
+        Ok(Self::And(Box::new(lhs.clone()), Box::new(rhs.clone())))
+      }
+      "eq" => {
+        let (lhs, rhs) = Self::parse_logicvars(input)?;
+        Ok(Self::Eq(lhs, rhs))
+      }
+      "lt" => {
+        let (lhs, rhs) = Self::parse_logicvars(input)?;
+        Ok(Self::Lt(lhs, rhs))
+      }
+      "lte" => {
+        let (lhs, rhs) = Self::parse_logicvars(input)?;
+        Ok(Self::Lte(lhs, rhs))
+      }
+      "gt" => {
+        let (lhs, rhs) = Self::parse_logicvars(input)?;
+        Ok(Self::Gt(lhs, rhs))
+      }
+      "gte" => {
+        let (lhs, rhs) = Self::parse_logicvars(input)?;
+        Ok(Self::Gte(lhs, rhs))
+      }
+      _ => Ok(Self::IsTrue(and_or_var)),
     }
   }
 }
@@ -307,31 +458,6 @@ fn camelize(ident: Ident) -> Ident {
   let camel_text = value.as_str();
   Ident::new(camel_text, ident.span())
 }
-
-fn convert_to_condition(cond: Condition) -> proc_macro2::TokenStream {
-  match cond {
-    Condition::IsTrue(ident) => {
-      let camel_ident = camelize(ident);
-      quote!(
-          ::cockatiel::prelude::Condition::IsTrue(Vars::#camel_ident)
-      )
-    }
-    Condition::IsFalse((_, ident)) => {
-      let camel_ident = camelize(ident);
-
-      quote!(
-        ::cockatiel::prelude::Condition::IsFalse(Vars::#camel_ident)
-      )
-    }
-    Condition::And(lhs, rhs) => {
-      let lhs_tokens = convert_to_condition(*lhs);
-      let rhs_token = convert_to_condition(*rhs);
-      quote!(
-        ::cockatiel::prelude::Condition::And(Box::new(#lhs_tokens), Box::new(#rhs_token))
-      )
-    }
-  }
-}
 fn transitions_impl(item: TokenStream) -> TokenStream {
   let input = parse_macro_input!(item as Transitions);
   let transitions = input.transitions.iter().map(|transition| {
@@ -341,7 +467,7 @@ fn transitions_impl(item: TokenStream) -> TokenStream {
     let (condition, shift) = match transition.after.clone() {
       None => (quote!(None), quote!(None)),
       Some(After::Condition(cond)) => {
-        let cond = convert_to_condition(cond);
+        let cond = cond.into_tokens();
         (quote! {Some(#cond)}, quote!(None))
       }
       Some(After::Shift(Shift { shift })) => {
