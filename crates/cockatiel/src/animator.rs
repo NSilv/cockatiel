@@ -566,7 +566,7 @@ pub fn execute_animations<Tag: AnimatorTag, Anim: Animatable>(
         }
 
         // Animator has finished the frame
-        if has_frame_finished {
+        if has_frame_finished && (!is_last_frame || frame_data.loops) {
           // Update sprite to match the new frame
           let frame = animator.next(&frame_data, direction);
           atlas.index = frame.index;
@@ -580,11 +580,9 @@ pub fn execute_animations<Tag: AnimatorTag, Anim: Animatable>(
             event_writer.write(animator_event);
           }
 
-          // Start the timer for the new frame, unless we're at the end and don't loop
-          if !is_last_frame || frame_data.loops {
-            let duration = animator.get_frame_duration(&frame_data);
-            animator.timer.restart_carry(duration);
-          }
+          // Start the timer for the new frame
+          let duration = animator.get_frame_duration(&frame_data);
+          animator.timer.restart_carry(duration);
         }
       }
     }
