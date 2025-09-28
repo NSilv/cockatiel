@@ -196,6 +196,11 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
   pub fn current_state(&self) -> &State {
     &self.current_state
   }
+  // Priority for transitions is as following
+  // 1. Shift transitions
+  // 2. Normal transitions with a condition
+  // 3. Normal transitions
+  // 4. Transitions from Any
   fn get_transitions_for(
     &mut self,
     state: &State,
