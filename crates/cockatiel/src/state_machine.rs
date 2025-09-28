@@ -184,7 +184,7 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
       } => {
         shift_transitions.insert(*shift, transition);
       }
-      Transition { to, .. } if to == &State::any_state() => {
+      Transition { from, .. } if from == &State::any_state() => {
         any_transitions.push(transition);
       }
       _ => transitions
@@ -215,6 +215,7 @@ impl<Inputs: AnimationInput, State: AnimationState, Shift: AnimationShift>
       .filter(|t| t.to != *state)
       .cloned()
       .collect::<Vec<_>>();
+
     if let Some(transitions_for_state) = self.transitions.get_mut(state) {
       transitions_for_state.sort_by_key(|transition: &Transition<State, Inputs, Shift>| {
         match transition.condition.is_some() {
